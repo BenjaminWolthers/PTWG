@@ -1,0 +1,499 @@
+#All samples are in /home/projects/pr_46453/people/beolwo/PTWG/QC
+
+# Update sex on all samples
+#Update sex
+R
+d<- read.table("merge_check_strand.fam")
+#check working dir
+#set new working dir
+setwd("~/PTWG")
+#read covariate file
+covar<-read.csv("PTWG_Covars.csv")
+head(covar)
+dim(covar)
+#remove duplicates
+covar<-subset(covar, !duplicated(covar$nophonr))
+
+#merge files
+sex<-merge(d,covar, by.x= 'V2', by.y='nophonr', all.x=T)
+dim(sex)
+#Format file to FID, IID, sex (male=1, female =2, unknown =0)
+sex<-sex[,c(2,1,7)]
+sex$sex[is.na(sex)]<-0
+
+setwd("/home/projects/pr_46453/people/beolwo/PTWG/QC")
+write.table(sex, file= "updatesex.txt", quote=FALSE , row.names=FALSE , col.names=FALSE )
+quit()
+
+plink --bfile merge_check_strand --update-sex updatesex.txt --make-bed --allow-no-sex --out PTWG0_1
+2631699 variants and 2389 people pass filters and QC.
+Note: No phenotypes present.
+
+
+# Update cases and controls
+#Check 'BFM 3.00E110'
+R
+d<-read.table("PTWG0_1.fam")
+getwd()
+[1] "/home/projects/pr_46453/people/beolwo/PTWG/QC"
+#set new working dir
+setwd("~/PTWG")
+#read case data file
+cases<-read.csv("PTWGPhenoData.csv")
+d[,6] <- 1
+new <- cases[,1]
+length(new)
+313
+for (i in new) {
+  line <- grep( i , d[,2])
+  d[ line , 6] <- 2}
+
+table(d[,6])
+# 1    2
+#2072  317
+# Duplicated  case IDs!
+setwd("/home/projects/pr_46453/people/beolwo/PTWG/QC")
+write.table(d, file= "PTWG0_1.fam", quote=FALSE , row.names=FALSE , col.names=FALSE )
+quit()
+
+
+# Remove  nonconsenters from batch 4
+R
+d<-read.table("PTWG0_1.fam")
+getwd()
+#"/home/projects/pr_46453/people/beolwo/PTWG/QC"
+#set new working dir
+setwd("~/PTWG")
+nc<-read.csv("nonconsenters.csv",header=F, col.names="ID")
+head(nc)
+#       ID
+#1 2008022
+#2 2008024
+#3 2008025
+setwd("/home/projects/pr_46453/people/beolwo/PTWG/QC")
+
+ncC<-merge(nc,d, by.x='ID', by.y='V2', all.x=T)
+dim(ncC)
+
+ncCC<-subset(ncC, ncC$V6 ==1)
+
+#write irem file
+nonconsent<-ncCC[,c(2,1)]
+write.table(nonconsent , file= "nonconsenters.irem", quote=FALSE , row.names=FALSE , col.names=FALSE )
+
+plink --bfile PTWG0_1 --remove nonconsenters.irem --make-bed --out PTWG0_2
+2631699 variants and 2381 people pass filters and QC.
+Among remaining phenotypes, 317 are cases and 2064 are controls.
+
+
+# Remove adults and infants(2016222 and 2015132)
+R
+fam<-read.table("PTWG0_2.fam")
+getwd()
+#"/home/projects/pr_46453/people/beolwo/PTWG/QC"
+#set new working dir
+setwd("~/PTWG")
+Adults<-read.csv("NophoAgeAbove18.csv",header=F, col.names="ID")
+setwd("/home/projects/pr_46453/people/beolwo/PTWG/QC")
+
+Adults.irem<-merge(Adults,fam, by.x='ID', by.y='V2')
+dim(Adults.irem)
+#[1] 189   6
+
+#write irem file
+Adults.irem<-Adults.irem[,c(2,1)]
+
+write.table(Adults.irem , file= "Adults.irem", quote=FALSE , row.names=FALSE , col.names=FALSE )
+
+plink --bfile PTWG0_2 --remove Adults.irem --make-bed --out PTWG0_3
+2631699 variants and 2189 people pass filters and QC.
+Among remaining phenotypes, 315 are cases and 1877 are controls.
+
+# Remove NOPHO controls who truncated asparaginase therapy to non AAP cause
+#file is generated with data from Birgitte Klug Albertsen
+plink --bfile PTWG0_3 --remove TruncAsp.irem --make-bed --out PTWG0_4
+2631699 variants and 1984 people pass filters and QC.
+Among remaining phenotypes, 315 are cases and 1671 are controls
+
+
+#mind and geno
+# --geno filters out all variants with missing call rates exceeding the provided value to be removed, while --mind does the same for samples(individuals).
+plink --bfile PTWG0_4 --mind 0.2 --geno 0.05 --make-bed --out PTWG1
+2408305 variants and 1898 people pass filters and QC.
+Among remaining phenotypes, 296 are cases and 1604 are controls.
+
+
+#Plot of mind and geno
+#create files calculating mind and geno
+plink --bfile PTWG0_4 --missing
+
+#mind
+R
+d<-read.table("plink.imiss", header=T)
+test<-subset(d,d$F_MISS>0.2)
+dim(test)
+#[1] 189   6
+#plot
+attach(d)
+bitmap("MissingGenotypes.png", res=600)
+hist(F_MISS, breaks=40)
+abline(v=0.02, col='red')
+dev.off();
+#geno
+d<-read.table("plink.lmiss", header=T)
+dim(d)
+#2631699       5
+#plot
+attach(d)
+bitmap("MissingSamples.png", res=600)
+hist(F_MISS, breaks=40)
+abline(v=0.02, col='red')
+dev.off();
+quit("no")
+
+
+
+#move to PTWG plot folder 
+mv MissingSamples.png ~/PTWG/plots
+mv MissingGenotypes.png ~/PTWG/plots
+
+
+# High heterozygosity
+--het computes observed and expected autosomal homozygous genotype counts for each sample, and reports method-of-moments F coefficient estimates (i.e. ([observed hom. count] - [expected count]) / ([total observations] - [expected count])) to plink.het
+
+plink --bfile PTWG1 --het --out PTWG1_hom
+
+R
+het <- read.table("PTWG1_hom.het", header=T);
+m <- mean(het$F);s=sd(het$F);min=m-4*s;max=m+4*s;
+het_stats <- matrix(c(m,s,min,max),ncol=1);
+rownames(het_stats) <- c("mean","SD","min","max");
+het_stats;
+high_het <- subset(het,(het$F<=min));
+dim(high_het)
+# 16  6
+high_hom <- subset(het,(het$F>max))
+dim(high_hom)
+# 6 6
+write.table(high_het,file="high_het.txt", sep="\t", quote=FALSE, row.name = FALSE);
+write.table(high_hom,file="high_hom.txt", sep="\t", quote=FALSE, row.name = FALSE);
+write.table(high_het[names(high_het) %in% c("FID","IID")],file="high_het.irem", sep="\t", quote=FALSE, row.name = FALSE);
+#plot
+bitmap("HighHet.png", res=600)
+hist(het$F, breaks=40)
+abline(v=-0.191398803 , col='red')
+dev.off();
+quit("no")
+mv HighHet.png ~/PTWG/plots
+
+plink --bfile PTWG1 --remove high_het.irem --make-bed --out PTWG2
+2408305 variants and 1882 people pass filters and QC.
+Among remaining phenotypes, 292 are cases and 1592 are controls.
+
+
+# sex check:
+#Had to update sex again see prior step, still 5 ambiguous
+(2015132 and 2016222 were included even though no pedigree sex exissts, this must be added) 
+
+#create a file with discordance between snp sex and pedigree sex.
+plink --bfile PTWG2 --check-sex --out PTWG2_1_sex
+awk 'NR==1||$5=="PROBLEM"' PTWG2_1_sex.sexcheck
+awk 'NR==1||$5=="PROBLEM"' PTWG2_1_sex.sexcheck > sexCheck.irem
+
+plink --bfile PTWG2 --remove sexCheck.irem --make-bed --out PTWG3
+2408305 variants and 1822 people pass filters and QC.
+Among remaining phenotypes, 274 are cases and 1550 are controls.
+
+
+# relatedness
+### Calculating relatedness for all individuals. First we prune the data again:
+# Excluding the HLA region due to long-range LD( http://journals.plos.org/plosone/article?id=10.1371/journal.pone.0097282)
+echo 6 28866528 33775446 HLA-region > high-LD-regions.txt
+plink --bfile PTWG3 --maf 0.01 --exclude range high-LD-regions.txt --indep-pairwise 50 5 0.2 --out PTWG3_prune_50_5_0.2
+plink --bfile PTWG3 --extract PTWG3_prune_50_5_0.2.prune.in --make-bed --out PTWG3_pruned     
+plink --bfile PTWG3_pruned --freq --out PTWG3_pruned_freq
+plink --bfile PTWG3_pruned --read-freq PTWG3_pruned_freq.frq --genome --out PTWG3_pruned2
+plink --bfile PTWG3 --missing --out PTWG3_missing2
+perl select_relateds_to_remove.pl PTWG3_pruned2.genome PTWG3_missing2.imiss > PTWG3_related_table
+
+
+# Making irem file: 
+R
+d <- read.table("PTWG3_related_table", header=TRUE)
+#The PTWG3_related_table is messy, (think the perl script works poorly)
+#selecting only samples identical samples, like in the NOPHO cohort
+test<-subset(d, d$GT_RT=='SELF')
+test<-test[,c(1:7)]
+d<-test
+notIdenticalID <-subset(d, d$IID != d$IID_RELATED)
+#Make final irem file
+irem<-d[,c(1,2)]
+irem2<-notIdenticalID[,c(4,5)]
+irem3<-notIdenticalID[,c(1,2)]
+names(irem2)<-c('FID','IID')
+names(irem3)<-c('FID','IID')
+final_irem<-rbind(irem,irem2,irem3)
+write.table(final_irem , file= "related.irem", quote=FALSE , row.names=FALSE , col.names=F )
+quit()
+n
+
+plink --bfile PTWG3 --remove related.irem --make-bed --out PTWG4
+2408305 variants and 1699 people pass filters and QC.
+Among remaining phenotypes, 264 are cases and 1437 are controls.
+
+
+# duplicated ids
+R
+d<-read.table("PTWG4.fam")
+dup <-subset(d , duplicated(d$V2 , fromLast=T) | duplicated(d$V2 , fromLast=F))
+#200137000107_R04C01 201315 is the correct sample for ID 2013135 (should not be excluded) 
+dup<-subset(dup, dup$V1 !='200137000107_R04C01')
+#And then removed the oldest samples
+irem<-dup[,c(1,2)]
+write.table( irem , file="duplicatedID.irem" , quote=F , sep=" ",
+             row.names=F , col.names=F)
+
+plink --bfile PTWG4 --remove duplicatedID.irem --make-bed --out PTWG5
+2408305 variants and 1682 people pass filters and QC.
+Among remaining phenotypes, 264 are cases and 1420 are controls.
+
+#Plot
+R
+d <- read.table("PTWG3_pruned.genome",header=T);
+bitmap(res=200, type="png16m", file="PTWG3_pruned_genome_z0_z1.png", taa=4, gaa=4);
+par(pch=16);
+with(d,plot(Z0,Z1, xlim=c(0,1), ylim=c(0,1), type="n"));
+with(subset(d,RT=="FS") , points(Z0,Z1,col="green3"));
+with(subset(d,RT=="HS") , points(Z0,Z1,col="darkorange"));
+with(subset(d,RT=="OT") , points(Z0,Z1,col="blue"));
+with(subset(d,RT=="PO") , points(Z0,Z1,col="red"));
+with(subset(d,RT=="UN") , points(Z0,Z1,col="black"));
+legend(1,1, xjust=1, yjust=1, legend=c("Full sibs (FS)","Half sibs (HS)","Other related (OT)","Parent-offspring (PO)","Unrelated (UN)"), pch=c(16,16,16,16,16), col=c(3,"darkorange",4,2,1))
+title("PTWG3_pruned.genome")
+dev.off()
+quit("no")
+
+
+# removing heterozygous haploid and nonmale Y chromosome genotype calls
+Normally, heterozygous haploid and nonmale Y chromosome genotype calls are logged to plink.hh and treated as missing by all analysis commands, but left undisturbed by --make-bed and --recode (since, once gender and/or chromosome code errors have been fixed, the calls are often valid). If you actually want --make-bed/--recode to erase this information, use --set-hh-missing
+
+plink --bfile PTWG5 --set-hh-missing --make-bed --out PTWG6
+2408305 variants and 1682 people pass filters and QC.
+Among remaining phenotypes, 264 are cases and 1420 are controls.
+
+#mind and geno
+plink --bfile PTWG6 --mind 0.02 --geno 0.02 --make-bed --out PTWG7
+2359266 variants and 1584 people pass filters and QC.
+Among remaining phenotypes, 248 are cases and 1338 are controls.
+
+
+# population stratification:
+
+### Population structure: merging with HapMap:
+# Hapmap is in b36 an nopho3 is in b37 and they will thus differ in both physical and genetic position (Only leukxv has genetic position). This is ignored and they are merged based on rsid.
+
+cat hapmap_no_AT_CG.bim PTWG7.bim | cut -f2 | sort | uniq -d > PTWG7_hapmap_overlap.snplist
+
+plink --bfile PTWG7 --bmerge hapmap_no_AT_CG.bed hapmap_no_AT_CG.bim hapmap_no_AT_CG.fam --extract PTWG7_hapmap_overlap.snplist --make-bed --out PTWG7_hapmap1
+# Error: 256645 variants with 3+ alleles present.
+
+# Attempt to flip, trying again, remove remaining:
+plink --bfile PTWG7 --extract PTWG7_hapmap_overlap.snplist --flip PTWG7_hapmap1-merge.missnp --make-bed --out step7_flipped
+plink --bfile step7_flipped --bmerge hapmap_no_AT_CG.bed hapmap_no_AT_CG.bim hapmap_no_AT_CG.fam  --extract PTWG7_hapmap_overlap.snplist --make-bed --out step7_hapmap2
+grep -v -w -f step7_hapmap2-merge.missnp PTWG7_hapmap_overlap.snplist > PTWG7_hapmap_overlap2.snplist
+plink --bfile step7_flipped --exclude step7_hapmap2-merge.missnp --make-bed --out step7_flipped2
+plink --bfile step7_flipped2 --bmerge hapmap_no_AT_CG.bed hapmap_no_AT_CG.bim hapmap_no_AT_CG.fam --allow-no-sex --extract PTWG7_hapmap_overlap2.snplist --make-bed --out PTWG7_hapmap3
+
+
+# Allele frequencies for all SNPs:
+
+plink --bfile PTWG7_hapmap3 --freq --out PTWG7_hapmap3_freq
+plink --bfile PTWG7_hapmap3 --autosome --exclude range high-LD-regions.txt --maf 0.01 --make-bed --out PTWG7_hapmap3_flt
+plink --bfile PTWG7_hapmap3_flt --indep-pairwise 2000kb 5 0.3 --out PTWG7_hapmap3_prune
+plink --bfile PTWG7_hapmap3_flt --extract PTWG7_hapmap3_prune.prune.in --make-bed --out PTWG7_hapmap3_pruned
+# --genome invokes an IBS/IBD computation
+plink --bfile PTWG7_hapmap3_pruned --genome --out PTWG7_hapmap3_pruned_genome
+plink --bfile PTWG7_hapmap3 --read-genome PTWG7_hapmap3_pruned_genome.genome --cluster --mds-plot 4 --out PTWG7_hapmap3_mds
+
+R
+mds <- read.table("PTWG7_hapmap3_mds.mds",sep="",header=T);
+setwd("~/PTWG")
+d<-read.csv("PTWGPhenoData.csv",header=T)
+setwd("/home/projects/pr_46453/people/beolwo/PTWG/QC")
+mds<-merge(mds, d, by.x="IID", by.y="International.AAP.Study.ID.number", all.x=T)
+ceu <- subset(mds , grepl("^[0-9]{4}$", mds$FID));
+yri <- subset(mds , grepl("^Yoruba_[0-9]{3}$", mds$FID));
+chb <- subset(mds , grepl("^NA[0-9]{5}$", mds$FID));
+#mds = 1794 lines, ceu=60 lines, yri = 60 lines; chb = 88 lines. 1321 remaining. Need to find a regexp that matches the remaining cases. One common thing is, that all their FIDs end with C01.
+PTWG <- subset(mds , grepl("C01" , mds$FID))
+dim(PTWG)
+1586    343
+
+no_stdevs <- 18;
+m1 <- mean(ceu$C1);s1 <- sd(ceu$C1);min1 <- m1-no_stdevs*s1;max1 <- m1+no_stdevs*s1;
+m2 <- mean(ceu$C2);s2 <- sd(ceu$C2);min2 <- m2-no_stdevs*s2;max2 <- m2+no_stdevs*s2;
+ceu_stats  <-  matrix(c(m1,s1,min1,max1,m2,s2,min2,max2),ncol=2);
+colnames(ceu_stats)  <-  c("C1","C2");
+rownames(ceu_stats)  <-  c("mean","sd","min","max");
+write.table(ceu_stats,file="PTWG7_ceu_stats_18sd.txt", sep="\t", quote=FALSE);
+
+noneu <- subset(mds,grepl("C01",mds$FID) & ((mds$C1<=min1|mds$C1>=max1) | (mds$C2<=min2|mds$C2>=max2))) # should we make the limits wider? and should we include more dimensions?
+dim(noneu)
+# 159   175
+
+# List of non-CEU samples:
+write.table(noneu,file = "PTWG7_noneu_18sd.mds" , sep="\t", quote=FALSE, row.name = FALSE);
+
+# Laver .irem fil:
+noneu<-noneu[,c(2,1)]
+write.table(noneu,file= "PTWG_noneu_18sd.irem", sep="\t", quote=FALSE, row.name = FALSE);
+
+#laver farvevektor
+k <- c(rep("pink",length(mds$FID)));
+k[grepl("C01", mds$FID) &! ( (mds$C1<=min1 | mds$C1>=max1) | (mds$C2<=min2 | mds$C2>=max2) )] <- "CEU control";
+k[grepl("C01", mds$FID) & ( (mds$C1<=min1 | mds$C1>=max1) | (mds$C2<=min2 | mds$C2>=max2))] <- "Non-CEU controls";
+k[grepl("^[0-9]{4}$", mds$FID)] <- "CEU";
+k[grepl("^NA[0-9]{5}$", mds$FID)] <- "CHB+JPT";
+k[grepl("^Yoruba_[0-9]{3}$", mds$FID)] <- "YRI";
+k[grepl("C01", mds$FID) & (mds$Gender.x >0.5) &! ( (mds$C1<=min1 | mds$C1>=max1) | (mds$C2<=min2 | mds$C2>=max2) )] <- "AAP cases";
+k[grepl("C01", mds$FID) & (mds$Gender.x >0.5) & ( (mds$C1<=min1 | mds$C1>=max1) | (mds$C2<=min2 | mds$C2>=max2))] <- "AAP cases";
+
+Legend<-k
+
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(ggthemes)
+library(gridBase)
+library(tidyverse)
+library(survival)
+library(reshape2)
+
+pdf("PTWG_hapmap3_mds_18sd_c1_c2.pdf");
+ggplot(mds, aes(x=C1, y=C2, color=Legend)) +
+  geom_point(shape=20, alpha=0.5, size=2.5) +   
+  labs(x = "C1")+
+  labs(y = "C2")+
+  ggtitle("PTWG vs HapMap C1-C2")+
+  theme(plot.title=element_text(hjust=0.5))+
+  theme_bw(base_size = 16)+
+  theme(axis.ticks.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid.minor = element_blank())+
+  scale_colour_brewer(palette = "Set1")
+dev.off();
+
+pdf("PTWG_hapmap3_mds_18sd_c1_c3.pdf");
+ggplot(mds, aes(x=C1, y=C3, color=Legend)) +
+  geom_point(shape=20, alpha=0.5, size=2.5) +   
+  labs(x = "C1")+
+  labs(y = "C2")+
+  ggtitle("PTWG vs HapMap C1-C3")+
+  theme(plot.title=element_text(hjust=0.5))+
+  theme_bw(base_size = 16)+
+  theme(axis.ticks.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid.minor = element_blank())+
+  scale_colour_brewer(palette = "Set1")
+dev.off();
+
+pdf("PTWG_hapmap3_mds_18sd_c1_c4.pdf");
+ggplot(mds, aes(x=C1, y=C4, color=Legend)) +
+  geom_point(shape=20, alpha=0.5, size=2.5) +   
+  labs(x = "C1")+
+  labs(y = "C2")+
+  ggtitle("PTWG vs HapMap C1-C4")+
+  theme(plot.title=element_text(hjust=0.5))+
+  theme_bw(base_size = 16)+
+  theme(axis.ticks.y = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid.minor = element_blank())+
+  scale_colour_brewer(palette = "Set1")
+dev.off();
+quit("no");
+
+plink --bfile PTWG7 --remove PTWG_noneu_18sd.irem --make-bed --out PTWG8
+2359266 variants and 1425 people pass filters and QC.
+Among remaining phenotypes, 211 are cases and 1216 are controls.
+
+#Missingness again
+plink --bfile PTWG8 --mind 0.02 --geno 0.02 --make-bed --out PTWG9
+2355407 variants and 1425 people pass filters and QC.
+Among remaining phenotypes, 211 are cases and 1216 are controls.
+Total genotyping rate in remaining samples is 0.997313.
+
+
+
+#Hardy W(5e-6) 
+plink --bfile PTWG9 --hwe midp 5e-6 include-nonctrl --make-bed --out PTWG10
+2354656 variants and 1425 people pass filters and QC.
+Among remaining phenotypes, 211 are cases and 1216 are controls. 
+
+
+
+#Minor allele frequency (maf 0.01) 
+plink --bfile PTWG10 --maf 0.01 --make-bed --out PTWG11
+1432618 variants and 1425 people pass filters and QC.
+Among remaining phenotypes, 212 are cases and 1215 are controls
+
+
+###### NO POPULATION STRATIFICATION
+#Hardy W(5e-6) 
+plink --bfile PTWG7 --hwe midp 5e-6 include-nonctrl --make-bed --out PTWG7_2
+2356379 variants and 1584 people pass filters and QC.
+Among remaining phenotypes, 249 are cases and 1335 are controls. 
+
+
+
+#Minor allele frequency (maf 0.01) 
+plink --bfile PTWG7_2 --maf 0.01 --make-bed --out PTWG7_3
+1449448 variants and 1584 people pass filters and QC.
+Among remaining phenotypes, 249 are cases and 1335 are controls.
+
+#Checking for batch effect
+R
+d<-read.table("PTWG11.fam")
+d<-d[,c(1,2)]
+d$batchno<-0
+d$batchno[ grepl("^leuk", d$V1)]<-3
+d$batchno[ grepl("^20", d$V1)]<-4
+d$batchno[ grepl("^2000", d$V1)]<-1
+d$batchno[ grepl("^39", d$V1)]<-1
+table(d$batchno)
+#  1   3   4
+#294 676 612
+names(d) <- c("FID" , "IID" , "batchno");
+
+mds <- read.table("PTWG7_hapmap3_mds.mds" , sep="" , header=T);
+mb <- merge(mds, d , by = "FID")
+k <- c(rep("pink" ,length(mb$FID)));
+k[mb$batchno==1] <- "red"
+#k[mb$batchno==2] <- "blue"
+k[mb$batchno==3] <- "green"
+k[mb$batchno==4] <- "black"
+
+pdf("PTWG_batch_c1_c2.pdf");
+plot( mb$C2 ~ mb$C1 , col=k , pch=3 , cex=0.5 , xlab="C1" , ylab="C2");
+legend("bottomright",c("Batch 1+2" , "Batch 3","Batch 4"), cex=1, col=c("red","green","black"), pch=3);
+title("MDS by batch");
+dev.off();
+
+pdf("PTWG_batch_c1_c3.pdf");
+plot( mb$C3 ~ mb$C1 , col=k , pch=3 , cex=0.5 , xlab="C1" , ylab="C3");
+legend("bottomright",c("Batch 1+2" , "Batch 3","Batch 4"), cex=1, col=c("red","green","black"), pch=3) ;
+title("MDS by batch");
+dev.off();
+
+#pdf("nopho7_mds_batch_c1_c4.pdf");
+#plot( mb$C4 ~ mb$C1 , col=k , pch=3 , cex=0.5 , xlab="C1" , ylab="C4");
+#legend("topleft",c("Batch 1" , "Batch 2.1" , "Batch 2.2" , "Batch 3"), cex=1, col=c("red","blue","green","black"), pch=3);
+#title("QC step 7, MDS by batch");
+#dev.off();
+ quit("no")
+
+
+QC done
+
+
+
+

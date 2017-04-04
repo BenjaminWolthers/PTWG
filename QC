@@ -1,5 +1,9 @@
 #All samples are in /home/projects/pr_46453/people/beolwo/PTWG/QC
 
+#########################
+###Cleaning of dataset###
+#########################
+
 # Update sex on all samples
 #Update sex
 R
